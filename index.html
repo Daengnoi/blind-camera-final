@@ -3,35 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AI Camera Helper - GitHub Edition</title>
-  
-  <!-- โหลด AI (face-api.js) -->
+  <title>AI Camera Helper Pro</title>
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
-  
   <style>
     body { margin: 0; background: #000; color: #fff; text-align: center; font-family: sans-serif; overflow: hidden; }
     
-    /* ปุ่ม Start เต็มหน้าจอ */
-    #btnStart { 
+    /* หน้าจอเริ่มต้น */
+    #startOverlay { 
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
-      background: #0000ff; color: #fff; font-size: 40px; border: none; 
-      z-index: 999; cursor: pointer; font-weight: bold; 
+      background: #0044cc; z-index: 999; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; cursor: pointer;
     }
 
     #status { 
-      font-size: 24px; padding: 15px; height: 12vh; background: #1a1a1a; 
-      color: #00ff00; font-weight: bold; display: flex; align-items: center; 
-      justify-content: center; border-bottom: 2px solid #333; 
+      font-size: 28px; padding: 15px; height: 15vh; background: #1a1a1a; 
+      color: #ffff00; font-weight: bold; display: flex; align-items: center; 
+      justify-content: center; border-bottom: 3px solid #333; 
     }
 
-    video { width: 100%; height: 50vh; object-fit: cover; transform: scaleX(-1); background: #222; }
+    .video-wrap { position: relative; width: 100%; height: 50vh; background: #000; }
+    video { width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); }
 
-    .controls { height: 38vh; display: flex; flex-direction: column; justify-content: space-evenly; align-items: center; padding: 10px; }
+    .controls { height: 35vh; display: flex; flex-direction: column; justify-content: center; padding: 10px; gap: 15px; }
 
     .btn { 
-      width: 90%; height: 80px; font-size: 28px; font-weight: bold; 
-      border: none; border-radius: 40px; color: white; display: none; 
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
+      width: 90%; height: 90px; font-size: 32px; font-weight: bold; 
+      border: none; border-radius: 45px; color: white; display: none; margin: 0 auto;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.5); 
     }
 
     #photoBtn { background: #28a745; }
@@ -41,23 +39,29 @@
 </head>
 <body>
 
-<!-- ปุ่มบังคับกดเพื่อขอสิทธิ์กล้องและเสียง -->
-<button id="btnStart" onclick="startApp()">แตะหน้าจอเพื่อเริ่ม<br>(TAP TO START)</button>
+<div id="startOverlay" onclick="startApp()">
+  <h1 style="font-size: 45px;">แตะหน้าจอเพื่อเริ่ม</h1>
+  <p style="font-size: 22px;">(TAP TO START)</p>
+</div>
 
-<div id="status">กรุณากดปุ่มสีน้ำเงิน</div>
-<video id="video" autoplay muted playsinline></video>
+<div id="status">กรุณากดปุ่มเพื่อเริ่ม</div>
+
+<div class="video-wrap">
+  <video id="video" autoplay muted playsinline></video>
+</div>
+
 <canvas id="canvas" style="display:none;"></canvas>
 
 <div class="controls">
-  <button id="photoBtn" class="btn" onclick="takePhoto()">📷 ถ่ายภาพนิ่ง</button>
-  <button id="videoBtn" class="btn" onclick="startVideoRecord()">🎥 เริ่มอัดวิดีโอ</button>
+  <button id="photoBtn" class="btn" onclick="takePhoto()">📷 ถ่ายรูป</button>
+  <button id="videoBtn" class="btn" onclick="startVideoRecord()">🎥 อัดวิดีโอ</button>
   <button id="stopBtn" class="btn" onclick="stopVideoRecord()">⏹ หยุดและบันทึก</button>
 </div>
 
 <script>
 const video = document.getElementById('video');
 const statusText = document.getElementById('status');
-const btnStart = document.getElementById('btnStart');
+const startOverlay = document.getElementById('startOverlay');
 const photoBtn = document.getElementById('photoBtn');
 const videoBtn = document.getElementById('videoBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -66,105 +70,123 @@ let modelsLoaded = false;
 let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
-let faceMissingCounter = 0; // ตัวนับเมื่อไม่พบใบหน้า
+let noFaceCounter = 0; // ตัวนับเมื่อไม่เจอหน้า
 
-// ระบบส่งเสียงภาษาไทย
+// ระบบเสียงภาษาไทย (ปรับปรุงให้นิ่งขึ้น)
 function speak(text) {
-  if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+  if (window.speechSynthesis.speaking && text !== "ตรงกลางแล้วค่ะ") return; 
+  window.speechSynthesis.cancel(); // หยุดเสียงเก่าทันทีเพื่อพูดประโยคใหม่
   const msg = new SpeechSynthesisUtterance(text);
   msg.lang = 'th-TH';
+  msg.rate = 1.1; 
   window.speechSynthesis.speak(msg);
 }
 
-// เริ่มเปิดกล้องและโหลด AI
+// เริ่มระบบ
 async function startApp() {
-  btnStart.style.display = 'none';
-  statusText.innerText = "กำลังขอกล้อง...";
+  startOverlay.style.display = 'none';
+  statusText.innerText = "กำลังเชื่อมต่อกล้อง...";
   
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: 'user' }, 
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, 
       audio: true 
     });
     video.srcObject = stream;
-    await video.play();
     
-    statusText.innerText = "โหลด AI... (โปรดรอสักครู่)";
+    statusText.innerText = "กำลังโหลด AI...";
     speak("กำลังโหลดเอไอค่ะ");
     
-    // โหลดไฟล์สมองกล
     const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
     await faceapi.loadTinyFaceDetectorModel(MODEL_URL);
     modelsLoaded = true;
     
     speak("เอไอพร้อมแล้ว ส่องกล้องมาที่หน้าได้เลยค่ะ");
     
-    // เริ่มตรวจจับใบหน้า
-    setInterval(async () => {
-      if (!modelsLoaded || isRecording) return;
-      const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
-      
-      if (detection) {
-        faceMissingCounter = 0; // พบหน้าแล้ว รีเซ็ตตัวนับ
-        const x = detection.box.x + (detection.box.width / 2);
-        const w = video.videoWidth;
-        
-        if (x < w * 0.35) { 
-          statusText.innerText = "ขยับขวา";
-          speak("ขยับขวา"); 
-          photoBtn.style.display='none'; videoBtn.style.display='none'; 
-        }
-        else if (x > w * 0.65) { 
-          statusText.innerText = "ขยับซ้าย";
-          speak("ขยับซ้าย"); 
-          photoBtn.style.display='none'; videoBtn.style.display='none'; 
-        }
-        else { 
-          statusText.innerText = "ตรงกลางแล้ว!"; 
-          speak("ตรงกลางแล้ว ถ่ายได้"); 
-          photoBtn.style.display='block'; videoBtn.style.display='block';
-          if(navigator.vibrate) navigator.vibrate(100);
-        }
-      } else {
-        // กรณีไม่พบใบหน้า
-        faceMissingCounter++;
-        statusText.innerText = "หาใบหน้าไม่เจอ...";
-        photoBtn.style.display='none'; 
-        videoBtn.style.display='none';
-
-        // ถ้าหาไม่เจอติดต่อกัน 2 รอบ (ประมาณ 1.6 วินาที) ให้ส่งเสียงเตือน
-        if (faceMissingCounter === 2) {
-          speak("ไม่พบใบหน้าค่ะ กรุณาส่องกล้องมาที่หน้าใหม่ค่ะ");
-        }
-      }
-    }, 800);
+    // เริ่มระบบตรวจจับ
+    detect();
   } catch (err) {
-    statusText.innerText = "เข้าถึงกล้องไม่ได้: " + err.name;
-    speak("ไม่สามารถเปิดกล้องได้ค่ะ โปรดอนุญาตสิทธิ์");
+    statusText.innerText = "เข้าถึงกล้องไม่ได้";
+    speak("ไม่สามารถเปิดกล้องได้ โปรดอนุญาตสิทธิ์ค่ะ");
+  }
+}
+
+async function detect() {
+  if (!modelsLoaded || isRecording) {
+    setTimeout(detect, 100);
+    return;
+  }
+
+  // ปรับค่าเซนเซอร์: inputSize 160 = เร็วและแม่นพอดีสำหรับมือถือ
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.5 });
+  const detection = await faceapi.detectSingleFace(video, options);
+
+  if (detection) {
+    noFaceCounter = 0;
+    const box = detection.box;
+    const x = box.x + (box.width / 2);
+    const w = video.videoWidth;
+    
+    // ตรวจสอบตำแหน่ง
+    if (x < w * 0.35) { 
+      statusText.innerText = "ขยับมือถือไปทางขวา";
+      speak("ขยับขวา"); 
+      toggleButtons(false);
+    } else if (x > w * 0.65) { 
+      statusText.innerText = "ขยับมือถือไปทางซ้าย";
+      speak("ขยับซ้าย"); 
+      toggleButtons(false);
+    } else { 
+      statusText.innerText = "ใบหน้าอยู่ตรงกลางแล้ว"; 
+      speak("ตรงกลางแล้วค่ะ"); 
+      toggleButtons(true);
+      if(navigator.vibrate) navigator.vibrate(100);
+    }
+  } else {
+    noFaceCounter++;
+    // ถ้าไม่เจอหน้าติดต่อกัน 3 รอบ (ประมาณ 1.5 วินาที)
+    if (noFaceCounter > 3) {
+      statusText.innerText = "ไม่พบใบหน้าในกรอบ";
+      speak("ไม่พบใบหน้าค่ะ");
+      toggleButtons(false);
+      noFaceCounter = 0; // รีเซ็ตเพื่อไม่ให้พูดรัว
+    }
+  }
+
+  // วนลูปตรวจจับต่อ
+  setTimeout(detect, 500); 
+}
+
+function toggleButtons(show) {
+  const display = show ? 'block' : 'none';
+  if (!isRecording) {
+    photoBtn.style.display = display;
+    videoBtn.style.display = display;
   }
 }
 
 function takePhoto() {
   const canvas = document.getElementById('canvas');
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
-  ctx.translate(canvas.width, 0); ctx.scale(-1, 1); 
+  ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
   ctx.drawImage(video, 0, 0);
   
   const link = document.createElement('a');
   link.download = `photo_${Date.now()}.jpg`;
   link.href = canvas.toDataURL('image/jpeg');
   link.click();
-  speak("บันทึกรูปภาพแล้ว");
+  speak("บันทึกรูปภาพสำเร็จค่ะ");
 }
 
 function startVideoRecord() {
   isRecording = true;
   recordedChunks = [];
   speak("เริ่มอัดวิดีโอ");
-  photoBtn.style.display='none';
-  videoBtn.style.display='none';
-  stopBtn.style.display='block';
+  photoBtn.style.display = 'none';
+  videoBtn.style.display = 'none';
+  stopBtn.style.display = 'block';
   
   mediaRecorder = new MediaRecorder(video.srcObject);
   mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
@@ -174,7 +196,7 @@ function startVideoRecord() {
     link.download = `video_${Date.now()}.webm`;
     link.href = URL.createObjectURL(blob);
     link.click();
-    speak("บันทึกวิดีโอเรียบร้อยแล้วค่ะ");
+    speak("บันทึกวิดีโอเรียบร้อยค่ะ");
   };
   mediaRecorder.start();
 }
@@ -182,7 +204,7 @@ function startVideoRecord() {
 function stopVideoRecord() {
   mediaRecorder.stop();
   isRecording = false;
-  stopBtn.style.display='none';
+  stopBtn.style.display = 'none';
 }
 </script>
 </body>
