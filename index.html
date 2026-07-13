@@ -3,41 +3,86 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AI Camera Pro - Fast Version</title>
-  <!-- ใช้ Library ตัวที่เร็วที่สุด -->
+  <title>AI Voice Camera Pro (Phone & PC)</title>
+  
+  <!-- โหลด Library AI -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  
   <style>
-    body { margin: 0; background: #000; color: #fff; text-align: center; font-family: sans-serif; }
-    #startOverlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #0044cc; z-index: 999; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    #status { font-size: 22px; padding: 10px; height: 10vh; background: #1a1a1a; color: #ffff00; font-weight: bold; }
-    video { width: 100%; height: 45vh; object-fit: contain; transform: scaleX(-1); background: #222; }
-    
-    .controls { height: 45vh; display: flex; flex-direction: column; justify-content: space-evenly; padding: 5px; }
-    .btn { width: 95%; height: 75px; font-size: 24px; font-weight: bold; border: none; border-radius: 15px; color: white; margin: 0 auto; cursor: pointer; }
-    
+    /* การออกแบบหน้าจอให้รองรับทั้ง PC และ Phone */
+    body { 
+      margin: 0; background: #000; color: #fff; text-align: center; 
+      font-family: sans-serif; display: flex; flex-direction: column; 
+      height: 100vh; overflow: hidden;
+    }
+
+    #startOverlay { 
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+      background: #0044cc; z-index: 999; display: flex; align-items: center; 
+      justify-content: center; cursor: pointer; text-align: center;
+    }
+
+    #status { 
+      font-size: clamp(20px, 4vw, 30px); padding: 10px; height: 10vh; 
+      background: #1a1a1a; color: #ffff00; font-weight: bold; 
+      display: flex; align-items: center; justify-content: center;
+      border-bottom: 2px solid #333;
+    }
+
+    .video-area { 
+      flex: 1; position: relative; background: #222; display: flex; justify-content: center; align-items: center;
+    }
+
+    video { 
+      max-width: 100%; max-height: 100%; object-fit: contain; transform: scaleX(-1); 
+    }
+
+    .controls { 
+      height: 35vh; background: #111; display: grid; 
+      grid-template-columns: 1fr; gap: 10px; padding: 15px; box-sizing: border-box;
+    }
+
+    .btn { 
+      width: 100%; height: 100%; font-size: clamp(22px, 5vw, 32px); 
+      font-weight: bold; border: none; border-radius: 20px; color: white; 
+      cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
     #photoBtn { background: #28a745; }
     #videoBtn { background: #dc3545; }
     #stopBtn { background: #ffc107; color: #000; display: none; }
-    
-    /* สไตล์ปุ่มตอนที่ AI ยังไม่พร้อม หรือหาหน้าไม่เจอ */
+
+    /* ปุ่มจะจางเมื่อ AI ยังหาหน้าไม่เจอ เพื่อให้รู้ว่ากดไม่ได้ */
     .disabled { opacity: 0.3; pointer-events: none; }
+
+    @media (min-width: 768px) {
+      /* ปรับแต่งสำหรับหน้าจอ PC */
+      .controls { grid-template-columns: 1fr 1fr; height: 20vh; }
+      video { height: 70vh; }
+    }
   </style>
 </head>
 <body>
 
 <div id="startOverlay" onclick="startApp()">
-  <h1 style="font-size: 40px;">แตะเพื่อเริ่ม<br>(TAP TO START)</h1>
+  <div>
+    <h1 style="font-size: 45px;">แตะหน้าจอเพื่อเริ่ม</h1>
+    <p style="font-size: 22px;">(TAP TO START)</p>
+  </div>
 </div>
 
-<div id="status">กรุณากดปุ่มเพื่อเริ่ม</div>
-<video id="video" autoplay muted playsinline></video>
+<div id="status">กำลังรอเปิดระบบ...</div>
+
+<div class="video-area">
+  <video id="video" autoplay muted playsinline></video>
+</div>
+
 <canvas id="canvas" style="display:none;"></canvas>
 
 <div class="controls">
-  <!-- ปุ่มจะแสดงรอไว้เลย แต่จะจางจนกว่าจะเจอหน้าตรงกลาง -->
-  <button id="photoBtn" class="btn disabled" onclick="takePhoto()">📷 ถ่ายรูป</button>
-  <button id="videoBtn" class="btn disabled" onclick="startVideoRecord()">🎥 อัดวิดีโอ</button>
-  <button id="stopBtn" class="btn" onclick="stopVideoRecord()">⏹ หยุดและบันทึก</button>
+  <button id="photoBtn" class="btn disabled" onclick="takePhoto()">📷 ถ่ายรูป (Photo)</button>
+  <button id="videoBtn" class="btn disabled" onclick="startVideoRecord()">🎥 อัดวิดีโอ (Video)</button>
+  <button id="stopBtn" class="btn" onclick="stopVideoRecord()">⏹ หยุดและบันทึก (Stop)</button>
 </div>
 
 <script>
@@ -53,17 +98,19 @@ let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
 
+// ระบบเสียงภาษาไทย (Thai Speech)
 function speak(text) {
   if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
   const msg = new SpeechSynthesisUtterance(text);
   msg.lang = 'th-TH';
-  msg.rate = 1.2; 
+  msg.rate = 1.1; 
   window.speechSynthesis.speak(msg);
 }
 
+// เริ่มเปิดกล้องและโหลด AI
 async function startApp() {
   startOverlay.style.display = 'none';
-  statusText.innerText = "เปิดกล้อง...";
+  statusText.innerText = "กำลังเชื่อมต่อกล้อง...";
   
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -72,27 +119,30 @@ async function startApp() {
     });
     video.srcObject = stream;
     
-    statusText.innerText = "กำลังโหลด AI...";
-    // ใช้ Model ขนาดเล็กที่สุดเพื่อความเร็ว
+    statusText.innerText = "โหลด AI...";
+    speak("กำลังโหลดเอไอค่ะ");
+    
+    // โหลด Model (ใช้ Tiny ตัวที่เล็กและเร็วที่สุด)
     const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
     await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
     modelsLoaded = true;
     
-    speak("เอไอพร้อมแล้วค่ะ");
+    speak("เอไอพร้อมแล้ว ส่องหน้ามาที่กล้องได้เลยค่ะ");
     detect();
   } catch (err) {
-    statusText.innerText = "ข้อผิดพลาดกล้อง";
-    speak("เปิดกล้องไม่ได้ค่ะ");
+    statusText.innerText = "ไม่สามารถเปิดกล้องได้";
+    speak("เปิดกล้องไม่ได้ โปรดอนุญาตสิทธิ์ค่ะ");
   }
 }
 
+// ระบบ AI ตรวจจับตำแหน่งใบหน้า
 async function detect() {
   if (!modelsLoaded || isRecording) {
     setTimeout(detect, 200);
     return;
   }
 
-  // ปรับค่าให้ประมวลผลเบาที่สุด (inputSize: 128)
+  // ปรับ inputSize เป็น 128 เพื่อให้รันบนมือถือได้ลื่นไหล (Fast for Mobile)
   const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 128, scoreThreshold: 0.5 });
   const result = await faceapi.detectSingleFace(video, options);
 
@@ -101,24 +151,24 @@ async function detect() {
     const w = video.videoWidth;
     
     if (x < w * 0.35) { 
-      statusText.innerText = "ขยับขวา";
+      statusText.innerText = "ขยับขวา (Move Right)";
       speak("ขยับขวา"); 
       setButtonsEnabled(false);
     } else if (x > w * 0.65) { 
-      statusText.innerText = "ขยับซ้าย";
+      statusText.innerText = "ขยับซ้าย (Move Left)";
       speak("ขยับซ้าย"); 
       setButtonsEnabled(false);
     } else { 
-      statusText.innerText = "ตรงกลางแล้ว!"; 
+      statusText.innerText = "ตรงกลางแล้ว (Centered)"; 
       speak("ตรงกลางแล้ว"); 
       setButtonsEnabled(true);
       if(navigator.vibrate) navigator.vibrate(100);
     }
   } else {
-    statusText.innerText = "หาใบหน้าไม่เจอ";
+    statusText.innerText = "ไม่พบใบหน้า (Face not found)";
     setButtonsEnabled(false);
   }
-  setTimeout(detect, 300); // หน่วงเวลาเล็กน้อยไม่ให้เครื่องร้อน
+  setTimeout(detect, 400); // หน่วงเวลาเล็กน้อยเพื่อประหยัดแบตเตอรี่และไม่ให้เครื่องร้อน
 }
 
 function setButtonsEnabled(enabled) {
@@ -131,25 +181,29 @@ function setButtonsEnabled(enabled) {
   }
 }
 
+// ฟังก์ชันถ่ายรูปนิ่ง
 function takePhoto() {
   const canvas = document.getElementById('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
+  // Mirror Correction
   ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
   ctx.drawImage(video, 0, 0);
   
   const link = document.createElement('a');
-  link.download = `photo.jpg`;
+  link.download = `photo_${Date.now()}.jpg`;
   link.href = canvas.toDataURL('image/jpeg');
   link.click();
-  speak("บันทึกรูปแล้ว");
+  speak("บันทึกรูปภาพเรียบร้อยค่ะ");
 }
 
+// ฟังก์ชันอัดวิดีโอ
 function startVideoRecord() {
   isRecording = true;
   recordedChunks = [];
   speak("เริ่มอัดวิดีโอ");
+  
   photoBtn.style.display = 'none';
   videoBtn.style.display = 'none';
   stopBtn.style.display = 'block';
@@ -159,10 +213,11 @@ function startVideoRecord() {
   mediaRecorder.onstop = () => {
     const blob = new Blob(recordedChunks, { type: 'video/webm' });
     const link = document.createElement('a');
-    link.download = `video.webm`;
+    link.download = `video_${Date.now()}.webm`;
     link.href = URL.createObjectURL(blob);
     link.click();
-    speak("บันทึกวิดีโอแล้ว");
+    speak("บันทึกวิดีโอเรียบร้อยค่ะ");
+    
     isRecording = false;
     stopBtn.style.display = 'none';
     photoBtn.style.display = 'block';
