@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AI Camera Helper - GitHub Edition</title>
+  
+  <!-- โหลด AI (face-api.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  
+  <style>
+    body { margin: 0; background: #000; color: #fff; text-align: center; font-family: sans-serif; overflow: hidden; }
+    
+    /* ปุ่ม Start เต็มหน้าจอ */
+    #btnStart { 
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+      background: #0000ff; color: #fff; font-size: 40px; border: none; 
+      z-index: 999; cursor: pointer; font-weight: bold; 
+    }
+
+    #status { 
+      font-size: 24px; padding: 15px; height: 12vh; background: #1a1a1a; 
+      color: #00ff00; font-weight: bold; display: flex; align-items: center; 
+      justify-content: center; border-bottom: 2px solid #333; 
+    }
+
+    video { width: 100%; height: 50vh; object-fit: cover; transform: scaleX(-1); background: #222; }
+
+    .controls { height: 38vh; display: flex; flex-direction: column; justify-content: space-evenly; align-items: center; padding: 10px; }
+
+    .btn { 
+      width: 90%; height: 80px; font-size: 28px; font-weight: bold; 
+      border: none; border-radius: 40px; color: white; display: none; 
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
+    }
+
+    #photoBtn { background: #28a745; }
+    #videoBtn { background: #dc3545; }
+    #stopBtn { background: #ffc107; color: #000; }
+  </style>
+</head>
+<body>
+
+<!-- ปุ่มบังคับกดเพื่อขอสิทธิ์กล้องและเสียง -->
+<button id="btnStart" onclick="startApp()">แตะหน้าจอเพื่อเริ่ม<br>(TAP TO START)</button>
+
+<div id="status">กรุณากดปุ่มสีน้ำเงิน</div>
+<video id="video" autoplay muted playsinline></video>
+<canvas id="canvas" style="display:none;"></canvas>
+
+<div class="controls">
+  <button id="photoBtn" class="btn" onclick="takePhoto()">📷 ถ่ายภาพนิ่ง</button>
+  <button id="videoBtn" class="btn" onclick="startVideoRecord()">🎥 เริ่มอัดวิดีโอ</button>
+  <button id="stopBtn" class="btn" onclick="stopVideoRecord()">⏹ หยุดและบันทึก</button>
+</div>
+
+<script>
+const video = document.getElementById('video');
+const statusText = document.getElementById('status');
+const btnStart = document.getElementById('btnStart');
+const photoBtn = document.getElementById('photoBtn');
+const videoBtn = document.getElementById('videoBtn');
+const stopBtn = document.getElementById('stopBtn');
+
+let modelsLoaded = false;
+let mediaRecorder;
+let recordedChunks = [];
+let isRecording = false;
+let faceMissingCounter = 0; // ตัวนับเมื่อไม่พบใบหน้า
+
+// ระบบส่งเสียงภาษาไทย
+function speak(text) {
+  if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+  const msg = new SpeechSynthesisUtterance(text);
+  msg.lang = 'th-TH';
+  window.speechSynthesis.speak(msg);
+}
+
+// เริ่มเปิดกล้องและโหลด AI
+async function startApp() {
+  btnStart.style.display = 'none';
+  statusText.innerText = "กำลังขอกล้อง...";
+  
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: 'user' }, 
+      audio: true 
+    });
+    video.srcObject = stream;
+    await video.play();
+    
+    statusText.innerText = "โหลด AI... (โปรดรอสักครู่)";
+    speak("กำลังโหลดเอไอค่ะ");
+    
+    // โหลดไฟล์สมองกล
+    const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+    await faceapi.loadTinyFaceDetectorModel(MODEL_URL);
+    modelsLoaded = true;
+    
+    speak("เอไอพร้อมแล้ว ส่องกล้องมาที่หน้าได้เลยค่ะ");
+    
+    // เริ่มตรวจจับใบหน้า
+    setInterval(async () => {
+      if (!modelsLoaded || isRecording) return;
+      const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
+      
+      if (detection) {
+        faceMissingCounter = 0; // พบหน้าแล้ว รีเซ็ตตัวนับ
+        const x = detection.box.x + (detection.box.width / 2);
+        const w = video.videoWidth;
+        
+        if (x < w * 0.35) { 
+          statusText.innerText = "ขยับขวา";
+          speak("ขยับขวา"); 
+          photoBtn.style.display='none'; videoBtn.style.display='none'; 
+        }
+        else if (x > w * 0.65) { 
+          statusText.innerText = "ขยับซ้าย";
+          speak("ขยับซ้าย"); 
+          photoBtn.style.display='none'; videoBtn.style.display='none'; 
+        }
+        else { 
+          statusText.innerText = "ตรงกลางแล้ว!"; 
+          speak("ตรงกลางแล้ว ถ่ายได้"); 
+          photoBtn.style.display='block'; videoBtn.style.display='block';
+          if(navigator.vibrate) navigator.vibrate(100);
+        }
+      } else {
+        // กรณีไม่พบใบหน้า
+        faceMissingCounter++;
+        statusText.innerText = "หาใบหน้าไม่เจอ...";
+        photoBtn.style.display='none'; 
+        videoBtn.style.display='none';
+
+        // ถ้าหาไม่เจอติดต่อกัน 2 รอบ (ประมาณ 1.6 วินาที) ให้ส่งเสียงเตือน
+        if (faceMissingCounter === 2) {
+          speak("ไม่พบใบหน้าค่ะ กรุณาส่องกล้องมาที่หน้าใหม่ค่ะ");
+        }
+      }
+    }, 800);
+  } catch (err) {
+    statusText.innerText = "เข้าถึงกล้องไม่ได้: " + err.name;
+    speak("ไม่สามารถเปิดกล้องได้ค่ะ โปรดอนุญาตสิทธิ์");
+  }
+}
+
+function takePhoto() {
+  const canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.translate(canvas.width, 0); ctx.scale(-1, 1); 
+  ctx.drawImage(video, 0, 0);
+  
+  const link = document.createElement('a');
+  link.download = `photo_${Date.now()}.jpg`;
+  link.href = canvas.toDataURL('image/jpeg');
+  link.click();
+  speak("บันทึกรูปภาพแล้ว");
+}
+
+function startVideoRecord() {
+  isRecording = true;
+  recordedChunks = [];
+  speak("เริ่มอัดวิดีโอ");
+  photoBtn.style.display='none';
+  videoBtn.style.display='none';
+  stopBtn.style.display='block';
+  
+  mediaRecorder = new MediaRecorder(video.srcObject);
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const link = document.createElement('a');
+    link.download = `video_${Date.now()}.webm`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    speak("บันทึกวิดีโอเรียบร้อยแล้วค่ะ");
+  };
+  mediaRecorder.start();
+}
+
+function stopVideoRecord() {
+  mediaRecorder.stop();
+  isRecording = false;
+  stopBtn.style.display='none';
+}
+</script>
+</body>
+</html>
